@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Пинг-понг со стеной</title>
+<style>
+:root{--bg:#f4f1ea;--table:#1f6f4a;--line:#e9f5ee;--text:#1d1d1b;--accent:#e8590c;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#15171a;--table:#175a3c;--line:#cfe8da;--text:#eceae4;--accent:#ff8a4c}}
+:root[data-theme="dark"]{--bg:#15171a;--table:#175a3c;--line:#cfe8da;--text:#eceae4;--accent:#ff8a4c}
+html,body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
+body{display:flex;flex-direction:column;align-items:center;gap:12px;padding:16px}
+h1{font-size:1.2rem;margin:4px 0 0}
+.bar{display:flex;gap:24px;font-size:1.05rem}
+canvas{width:100%;max-width:800px;aspect-ratio:8/5;border-radius:10px;touch-action:none;cursor:none;box-shadow:0 4px 18px rgba(0,0,0,.25)}
+p{margin:0;opacity:.7;font-size:.9rem;text-align:center}
+</style>
+</head>
+<body>
+<h1>🏓 Пинг-понг со стеной</h1>
+<div class="bar"><span>Счёт: <b id="s">0</b></span><span>Рекорд: <b id="b">0</b></span></div>
+<canvas id="c" width="800" height="500"></canvas>
+<p>Мышь / касание / ↑↓ или W S — двигать ракетку. Пробел или клик — старт.</p>
+<script>
+const cv=document.getElementById('c'),ctx=cv.getContext('2d');
+const W=800,H=500,PW=12,PH=90,PX=30,WALL=W-20,R=9,SPEED=7;
+const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+let py=H/2,ball,score=0,best=0,state='ready',keys={};
+try{best=+localStorage.getItem('wallpong-best')||0}catch(e){}
+document.getElementById('b').textContent=best;
+
+function serve(){
+  const a=(Math.random()*0.8-0.4);
+  ball={x:PX+PW+R+4,y:py,vx:Math.cos(a)*SPEED,vy:Math.sin(a)*SPEED};
+}
+function start(){score=0;document.getElementById('s').textContent=0;serve();state='play'}
+
+function setY(clientY){
+  const r=cv.getBoundingClientRect();
+  py=Math.max(PH/2,Math.min(H-PH/2,(clientY-r.top)/r.height*H));
+}
+cv.addEventListener('pointermove',e=>setY(e.clientY));
+cv.addEventListener('pointerdown',e=>{setY(e.clientY);if(state!=='play')start()});
+addEventListener('keydown',e=>{
+  keys[e.key.toLowerCase()]=true;
+  if(e.code==='Space'){e.preventDefault();if(state!=='play')start()}
+  if(['arrowup','arrowdown'].includes(e.key.toLowerCase()))e.preventDefault();
+});
+addEventListener('keyup',e=>keys[e.key.toLowerCase()]=false);
+
+function update(){
+  if(keys['arrowup']||keys['w'])py-=8;
+  if(keys['arrowdown']||keys['s'])py+=8;
+  py=Math.max(PH/2,Math.min(H-PH/2,py));
+  if(state!=='play')return;
+
+  ball.x+=ball.vx;ball.y+=ball.vy;
+  // верхняя и нижняя границы стола
+  if(ball.y<R){ball.y=R;ball.vy=-ball.vy}
+  if(ball.y>H-R){ball.y=H-R;ball.vy=-ball.vy}
+  // стена
+  if(ball.x>WALL-R){ball.x=WALL-R;ball.vx=-ball.vx}
+  // ракетка
+  if(ball.vx<0&&ball.x-R<=PX+PW&&ball.x>PX-PW&&Math.abs(ball.y-py)<=PH/2+R){
+    const off=(ball.y-py)/(PH/2);          // -1..1
+    const a=off*Math.PI/3;                 // до 60°
+    ball.vx=Math.cos(a)*SPEED;             // скорость всегда одна и та же
+    ball.vy=Math.sin(a)*SPEED;
+    ball.x=PX+PW+R;
+    score++;document.getElementById('s').textContent=score;
+  }
+  // мимо ракетки
+  if(ball.x<-R){
+    state='over';
+    if(score>best){best=score;document.getElementById('b').textContent=best;
+      try{localStorage.setItem('wallpong-best',best)}catch(e){}}
+  }
+}
+
+function draw(){
+  ctx.fillStyle=css('--table');ctx.fillRect(0,0,W,H);
+  ctx.strokeStyle=css('--line');ctx.lineWidth=3;ctx.strokeRect(6,6,W-12,H-12);
+  ctx.setLineDash([12,12]);ctx.lineWidth=2;
+  ctx.beginPath();ctx.moveTo(W/2,6);ctx.lineTo(W/2,H-6);ctx.stroke();ctx.setLineDash([]);
+  // стена
+  ctx.fillStyle='#8a8f98';ctx.fillRect(WALL,0,W-WALL,H);
+  ctx.fillStyle='#5d626b';
+  for(let y=0;y<H;y+=25)ctx.fillRect(WALL,y,W-WALL,2);
+  // ракетка
+  ctx.fillStyle=css('--accent');
+  ctx.beginPath();ctx.roundRect(PX,py-PH/2,PW,PH,5);ctx.fill();
+  // мяч
+  if(ball){ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(ball.x,ball.y,R,0,7);ctx.fill()}
+  // сообщения
+  ctx.fillStyle='#fff';ctx.textAlign='center';
+  if(state==='ready'){ctx.font='bold 28px system-ui';ctx.fillText('Нажми пробел или кликни',W/2,H/2)}
+  if(state==='over'){
+    ctx.font='bold 36px system-ui';ctx.fillText('Мимо! Счёт: '+score,W/2,H/2-8);
+    ctx.font='20px system-ui';ctx.fillText('Пробел или клик — ещё раз',W/2,H/2+28);
+  }
+}
+(function loop(){update();draw();requestAnimationFrame(loop)})();
+</script>
+</body>
+</html>
